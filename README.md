@@ -15,8 +15,9 @@ This project aims to study the dynamics of tumor growth using models based on pa
 * Dr. Scott Cochran
 
 **Graduate Students**
-* N/A
+* Elisha Erzoah
 
 **Undergraduate Students**
 * Charles Alexander Lee
- 
+* Lia McPherson
+* Khoi Vu
