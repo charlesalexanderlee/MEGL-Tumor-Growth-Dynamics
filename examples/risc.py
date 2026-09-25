@@ -16,7 +16,7 @@ N_s = 4.0
 N_c = 4.0
 
 time_delta = 0.01
-max_time_steps = 600
+max_time_steps = 500
 
 # Initial state 
 initial_state = np.array([0, 1, 0, 0.05]) # (r, i, s, c) = (0, 1, 0, 0.05)
