@@ -38,12 +38,34 @@ for t in range(max_time_steps):
 
     print(state)
 
-plt.title("RISC Model (Gompertz)")
-plt.plot(X[:, 0], color="red", label="r")
-plt.plot(X[:, 1], color="blue", label="i")
-plt.plot(X[:, 2], color="green", label="s")
-plt.plot(X[:, 3], color="black", label="c")
-plt.legend()
+# plt.title("RISC Model (Gompertz)")
+# plt.plot(X[:, 0], color="red", label="r")
+# plt.plot(X[:, 1], color="blue", label="i")
+# plt.plot(X[:, 2], color="green", label="s")
+# plt.plot(X[:, 3], color="black", label="c")
+# plt.scatter(X[:, 2], X[:, 3])
+# plt.legend()
+
+fig = plt.figure(figsize=plt.figaspect(2))
+
+# 3D Plot of R, I, S
+colors = X[1:-2, 2]
+ax = fig.add_subplot(2, 1, 1, projection='3d', computed_zorder=False)
+sc = ax.scatter(X[0, 0], X[0, 1], X[0, 2], marker='^', color='green', s=40, zorder=2)
+sc = ax.scatter(X[1:-2, 0], X[1:-2, 1], X[1:-2, 2], zorder=1, c='blue')
+sc = ax.scatter(X[-1:, 0], X[-1:, 1], X[-1:, 2], marker='v', color='red', s=40, zorder=2)
+ax.set_xlabel('Reservoir Cells', fontweight='bold')
+ax.set_ylabel('Immune Cells', fontweight='bold')
+ax.set_zlabel('Superimmune Cells', fontweight='bold')
+ax.set_title("RIS Cells Over Time", fontweight='bold')
+# plt.colorbar(sc, ax=ax, label='Time')
+
+# 2D Plot of C
+ax = fig.add_subplot(2, 1, 2)
+ax.plot(X[:, 3], color='red')
+ax.grid(True)
+ax.set_xlabel('Time', fontweight='bold')
+ax.set_ylabel('Cancer Cells', fontweight='bold')
 plt.show()
 
 # Forward Euler (potential instabilities with the time delta)
