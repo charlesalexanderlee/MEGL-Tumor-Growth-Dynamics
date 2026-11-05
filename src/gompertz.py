@@ -57,7 +57,7 @@ sc = ax.scatter(X[-1:, 0], X[-1:, 1], X[-1:, 2], marker='v', color='red', s=40, 
 ax.set_xlabel('Reservoir Cells', fontweight='bold')
 ax.set_ylabel('Immune Cells', fontweight='bold')
 ax.set_zlabel('Superimmune Cells', fontweight='bold')
-ax.set_title("RIS Cells Over Time", fontweight='bold')
+ax.set_title("RIS Cells Over Time\n(Gompertz Growth)", fontweight='bold')
 # plt.colorbar(sc, ax=ax, label='Time')
 
 # 2D Plot of C
