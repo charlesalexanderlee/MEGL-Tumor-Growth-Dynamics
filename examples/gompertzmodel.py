@@ -15,8 +15,6 @@ def risc(t, Y, gamma, Beta, alpha_i, alpha_s, alpha_c, Nu_i, Nu_s, Nu_c):
     dsdt = (Beta * r_safe * i_safe) + (alpha_s * s_safe * np.log(Nu_s / s_safe))
     dcdt = (alpha_c * c_safe * np.log(Nu_c / c_safe)) - (s_safe * c_safe)
 
-
-    
     return [drdt, didt, dsdt, dcdt]
 
 t_span = (0, 10)

@@ -1,107 +1,66 @@
 """
-MEGL TUMOR GROWTH DYNAMICS
-FALL 2026
+SPATIOTEMPORAL MODELING OF TUMOR GROWTH DYNAMICS
 https://github.com/charlesalexanderlee/MEGL-Tumor-Growth-Dynamics
 
-Faculty Members
-- Dr. Daniel Anderson
-- Dr. Scott Cochran
-Graduate Students
-- Elisha Erzoah
-Undergraduate Students
-- Charles Alexander Lee
-- Lia McPherson
-- Khoi Vu
+Mason Experimental Geometry Laboratory
+George Mason University
+Fall 2026
+
+[Faculty Members]
+* Dr. Daniel Anderson
+* Dr. Scott Cochran
+
+[Graduate Students]
+* Elisha Erzoah
+
+[Undergraduate Students]
+* Charles Alexander Lee
+* Lia McPherson
+* Khoi Vu
 """
 
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
+from helpers import *
+from datetime import datetime
 import numpy as np
 import pandas as pd
 import pathlib
 import json
-from datetime import datetime
-from pprint import pprint
+import time
 
-def fft(u):
-    return np.fft.fft(u)
+def save_results(data, label, timestamp, sim_num):
+    print(f"[Simulation {sim_num}] Saving {label}.csv")
+    
+    # Write dataframe to file
+    pd.DataFrame(data).to_csv(f"./output/{timestamp}/sim_{sim_num+1}/{label}.csv")
 
-def ifft(u_hat):
-    return np.fft.ifft(u_hat).real
+    print(f"[Simulation {sim_num}] Saving {label}.csv complete")
 
-def derivative(u, order=1):
-    return ifft((1j * k)**order * fft(u))
+def run_simulation(sim_num, timestamp):
+    # Simulation Settings
+    N = 256
+    L = 10.1               
+    dt = 5.0e-5
+    T = 1.30                
+    nsteps = int(T / dt)
 
-def laplacian(u):
-    return ifft(-k2 * fft(u))
+    # Constants
+    eps = .04  
+    M = .1   
+    sigma = 3.0e-5
+    M_sigma = .20
+    delta_sigma = .10
+    chi0 = 0.035
+    eps_T = .25
+    M0 = .90 
+    lambda_p = .05
+    lambda_A = .01
 
-def Phi_prime(phi):
-    return 2*phi**3 - 3*phi**2 + phi
-
-def heaviside(x):
-    return np.heaviside(x, 0.0)
-
-def mobility(phi):
-    return M0 * np.ones_like(phi)
-
-def S_sigma(phi_sigma, phi_T, phi_H, phi_N):
-    phi_P = phi_T - phi_H - phi_N
-    return -lambda_p * phi_sigma * phi_P - lambda_ph * phi_sigma * phi_H + lambda_a * (phi_P + phi_H)
-
-def S_T(phi_sigma, phi_T, phi_H, phi_N):
-    return lambda_p * phi_sigma * (phi_T - phi_H - phi_N) - lambda_A * (phi_T - phi_N)
-
-def S_H(phi_sigma, phi_T, phi_H, phi_N):
-    phi_P = phi_T - phi_H - phi_N
-    return -lambda_A * phi_H + lambda_pH * heaviside(sigma_ph - phi_sigma) * phi_P -\
-        heaviside( phi_sigma - sigma_hp) * phi_H - lambda_hn * heaviside(sigma_hn - phi_sigma) * phi_H
-
-def S_N(phi_sigma, phi_T, phi_H, phi_N):
-    phi_P = phi_T - phi_H - phi_N
-    return lambda_hn * heaviside( sigma_hn - phi_sigma) * phi_H
-
-def S_P(phi_sigma, phi_T, phi_H, phi_N):
-    phi_P = phi_T - phi_H - phi_N
-    return -lambda_p * phi_sigma * phi_P - \
-                lambda_A * phi_P - lambda_ph * heaviside( sigma_ph - phi_sigma)*phi_sigma +\
-                lambda_Hp * heaviside(phi_sigma - sigma_hp) * phi_H
-
-def Mobility(phi_T, phi_H = 0, phi_N = 0):
-    return Mp * (phi_T - phi_H - phi_N)**2 + Mh * phi_H**2 + Mn * phi_N**2
-
-def Mobility_h(phi_H):
-    return Mh * phi_H**2
-
-def Mobility_n(phi_N):
-    return Mn * phi_N**2
-
-# Simulation Settings
-NUM_SIMULATIONS = 5
-N = 256
-L = 10.1               
-dt = 5.0e-5
-T = 1.30                
-nsteps = int(T / dt)
-
-# Constants
-eps = .04  
-M = .1   
-sigma = 3.0e-5
-M_sigma = .20
-delta_sigma = .10
-chi0 = 0.035
-eps_T = .25
-M0 = .90 
-lambda_p = .05
-lambda_A = .01
-
-# Create folder for data output
-timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-folder_path = pathlib.Path(f"./output/{timestamp}")
-folder_path.mkdir(parents=True, exist_ok=True)
-
-for sim_num in range(NUM_SIMULATIONS):
+    # Create folder for current simulation
     folder_path = pathlib.Path(f"./output/{timestamp}/sim_{sim_num+1}")
     folder_path.mkdir(parents=True, exist_ok=True)
-    print(f"[Simulation {sim_num+1}]")
+
+    print(f"[Simulation {sim_num+1}] Started")
 
     Mp = np.random.choice(np.linspace(start=100, stop=300, num=N))
     Mh = np.random.choice(np.linspace(start=10, stop=30, num=N))
@@ -139,10 +98,9 @@ for sim_num in range(NUM_SIMULATIONS):
         "sigma_hp": sigma_hp,
         "sigma_hn": sigma_hn,
         "Ebar": Ebar
-        }
+    }
 
-    pprint(parameters)
-
+    # Create 1-dimensional line
     x = np.linspace(0, L, N)
     dx = L / N
 
@@ -182,7 +140,7 @@ for sim_num in range(NUM_SIMULATIONS):
     tdata = []
     tdata.append(0.0)
 
-    # Adding noise for later
+    # Noise addition (for later)
     # noise_scale = np.sqrt( 2.0 * M * sigma * dt / dx)
 
     den_sigma = 1.0 + dt * M_sigma * delta_sigma * k2
@@ -196,29 +154,29 @@ for sim_num in range(NUM_SIMULATIONS):
         phi_H = ifft(phi_H_hat)
         phi_N = ifft(phi_N_hat)
 
-        mu =  Phi_prime(phi_T) - eps_T**2 * laplacian(phi_T) - chi0 * phi_sigma
+        mu =  Phi_prime(phi_T) - eps_T**2 * laplacian(phi_T, k2) - chi0 * phi_sigma
         
-        rhs_sigma = phi_sigma_hat + dt * M_sigma * chi0 * k2 * phi_T_hat + dt * fft(S_sigma(phi_sigma, phi_T, phi_H, phi_N))  
+        rhs_sigma = phi_sigma_hat + dt * M_sigma * chi0 * k2 * phi_T_hat + dt * fft(S_sigma(phi_sigma, phi_T, phi_H, phi_N, lambda_p, lambda_ph, lambda_a))  
         phi_sigma_hat_new = rhs_sigma / den_sigma
 
         rhs_T =  -M0 * k2 * fft(Phi_prime(phi_T)) + M0 * chi0 * k2 * phi_sigma_hat 
         rhs_H =  -M0 * k2 * fft(Phi_prime(phi_T)) + M0 * chi0 * k2 * phi_sigma_hat 
         rhs_N =  -M0 * k2 * fft(Phi_prime(phi_T)) + M0 * chi0 * k2 * phi_sigma_hat 
 
-        d_mu = derivative(mu)
-        M_current_T = Mobility(phi_T, phi_H, phi_N)
+        d_mu = derivative(mu, k, order=1)
+        M_current_T = Mobility(phi_T, phi_H, phi_N, Mp, Mh, Mn)
         variable_flux_T = (M_current_T - M0) * d_mu
-        M_current_H = Mobility_h(phi_H)
+        M_current_H = Mobility_h(phi_H, Mh)
         variable_flux_H = (M_current_H - M0) * d_mu
-        M_current_N = Mobility_n(phi_N)
+        M_current_N = Mobility_n(phi_N, Mn)
         variable_flux_N = (M_current_N - M0) * d_mu
 
-        rhs_T += fft(derivative(variable_flux_T))
-        rhs_T += fft(S_T(phi_sigma, phi_T, phi_H, phi_N))
-        rhs_H += fft(derivative(variable_flux_H))
-        rhs_H += fft(S_H(phi_sigma, phi_T, phi_H, phi_N))
-        rhs_N += fft(derivative(variable_flux_N))
-        rhs_N += fft(S_N(phi_sigma, phi_T, phi_H, phi_N))
+        rhs_T += fft(derivative(variable_flux_T, k, order=1))
+        rhs_T += fft(S_T(phi_sigma, phi_T, phi_H, phi_N, lambda_p, lambda_A))
+        rhs_H += fft(derivative(variable_flux_H, k, order=1))
+        rhs_H += fft(S_H(phi_sigma, phi_T, phi_H, phi_N, lambda_A, lambda_pH, sigma_ph, sigma_hp, lambda_hn, sigma_hn))
+        rhs_N += fft(derivative(variable_flux_N, k, order=1))
+        rhs_N += fft(S_N(phi_sigma, phi_T, phi_H, phi_N, lambda_hn, sigma_hn))
 
         eta_T = rng.standard_normal(N)*.3
         eta_T_hat = np.fft.fft(eta_T)
@@ -247,25 +205,80 @@ for sim_num in range(NUM_SIMULATIONS):
         phi_N_data.append(phi_N)
         tdata.append(n*dt)
 
-    # Create dataframes for output data
-    phi_sigma_df = pd.DataFrame(phi_N_data)
-    phi_T_df = pd.DataFrame(phi_T_data)
-    phi_H_df = pd.DataFrame(phi_H_data)
-    phi_N_df = pd.DataFrame(phi_N_data)
-    tdata_df = pd.DataFrame(tdata)
-
-    # Print dataframe results
-    print(phi_sigma_df)
-    print(phi_T_df)
-    print(phi_H_df)
-    print(phi_N_df)
-    print(tdata_df)
-
-    # Write dataframes to file
+    # Save parameters for current simulation to file
     with open(f"./output/{timestamp}/sim_{sim_num+1}/params.json", "w", encoding="utf-8") as f:
-            json.dump(parameters, f, indent=4)
-    phi_sigma_df.to_csv(f"./output/{timestamp}/sim_{sim_num+1}/phi_sigma.csv")
-    phi_T_df.to_csv(f"./output/{timestamp}/sim_{sim_num+1}/phi_T.csv")
-    phi_H_df.to_csv(f"./output/{timestamp}/sim_{sim_num+1}/phi_H.csv")
-    phi_N_df.to_csv(f"./output/{timestamp}/sim_{sim_num+1}/phi_N.csv")
-    tdata_df.to_csv(f"./output/{timestamp}/sim_{sim_num+1}/tdata.csv")
+        json.dump(parameters, f, indent=4)
+
+    # Save results to corresponding simulation folder
+    print(f"[Simulation {sim_num+1}] Saving")
+    pd.DataFrame(phi_sigma_data).to_csv(f"./output/{timestamp}/sim_{sim_num+1}/phi_sigma_data.csv")
+    pd.DataFrame(phi_T_data).to_csv(f"./output/{timestamp}/sim_{sim_num+1}/phi_T_data.csv")
+    pd.DataFrame(phi_H_data).to_csv(f"./output/{timestamp}/sim_{sim_num+1}/phi_H_data.csv")
+    pd.DataFrame(phi_N_data).to_csv(f"./output/{timestamp}/sim_{sim_num+1}/phi_N_data.csv")
+    pd.DataFrame(tdata).to_csv(f"./output/{timestamp}/sim_{sim_num+1}/tdata.csv")
+    print(f"[Simulation {sim_num+1}] Complete")
+
+    # with ThreadPoolExecutor(max_workers=5) as thread_executor:
+    #     thread_executor.submit(
+    #         save_results,
+    #         data=phi_sigma_data,
+    #         label="phi_sigma_data",
+    #         timestamp=timestamp,
+    #         sim_num=sim_num 
+    #     )
+
+    #     thread_executor.submit(
+    #         save_results,
+    #         data=phi_T_data,
+    #         label="phi_T_data",
+    #         timestamp=timestamp,
+    #         sim_num=sim_num 
+    #     )
+
+    #     thread_executor.submit(
+    #         save_results,
+    #         data=phi_H_data,
+    #         label="phi_H_data",
+    #         timestamp=timestamp,
+    #         sim_num=sim_num 
+    #     )
+
+    #     thread_executor.submit(
+    #         save_results,
+    #         data=phi_N_data,
+    #         label="phi_N_data",
+    #         timestamp=timestamp,
+    #         sim_num=sim_num 
+    #     )
+
+    #     thread_executor.submit(
+    #         save_results,
+    #         data=tdata,
+    #         label="tdata",
+    #         timestamp=timestamp,
+    #         sim_num=sim_num 
+    #     )
+
+def main():
+    NUM_SIMULATIONS = 10
+    MAX_WORKERS = 10
+    TIMESTAMP = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+
+    # Create output folder for the run
+    folder_path = pathlib.Path(f"./output/{TIMESTAMP}")
+    folder_path.mkdir(parents=True, exist_ok=True)
+
+    with ProcessPoolExecutor(max_workers=MAX_WORKERS) as process_executor:
+        for sim_num in range(NUM_SIMULATIONS):
+            process_executor.submit(
+                run_simulation, 
+                sim_num=sim_num, 
+                timestamp=TIMESTAMP
+            )
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        print(e)
+
