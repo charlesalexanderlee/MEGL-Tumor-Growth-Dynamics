@@ -4,16 +4,13 @@ https://github.com/charlesalexanderlee/MEGL-Tumor-Growth-Dynamics
 
 Mason Experimental Geometry Laboratory
 George Mason University
+Department of Mathematical Sciences
 Fall 2026
 
-[Faculty Members]
+[Authors]
 * Dr. Daniel Anderson
 * Dr. Scott Cochran
-
-[Graduate Students]
 * Elisha Erzoah
-
-[Undergraduate Students]
 * Charles Alexander Lee
 * Lia McPherson
 * Khoi Vu
@@ -39,9 +36,9 @@ def save_results(data, label, timestamp, sim_num):
 def run_simulation(sim_num, timestamp):
     # Simulation Settings
     N = 256
-    L = 10.1               
+    L = 10.1
     dt = 5.0e-5
-    T = 1.30                
+    T = 1.30
     nsteps = int(T / dt)
 
     # Constants
