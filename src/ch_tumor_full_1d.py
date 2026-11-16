@@ -1,281 +1,247 @@
-"""
-SPATIOTEMPORAL MODELING OF TUMOR GROWTH DYNAMICS
-https://github.com/charlesalexanderlee/MEGL-Tumor-Growth-Dynamics
-
-Mason Experimental Geometry Laboratory
-George Mason University
-Department of Mathematical Sciences
-Fall 2026
-
-[Authors]
-* Dr. Daniel Anderson
-* Dr. Scott Cochran
-* Elisha Erzoah
-* Charles Alexander Lee
-* Lia McPherson
-* Khoi Vu
-"""
-
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
-from helpers import *
-from datetime import datetime
 import numpy as np
-import pandas as pd
-import pathlib
-import json
-import time
+import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation, FFMpegWriter
 
-def save_results(data, label, timestamp, sim_num):
-    print(f"[Simulation {sim_num}] Saving {label}.csv")
+
+
+N = 256               
+L = 10.1               
+       
+dt = 5.0e-5        
+T = 1.30                
+nsteps = int(T / dt)
+
+# constants
+eps = .04  
+M = .1   
+sigma = 3.0e-5
+
+M_sigma = .20
+delta_sigma = .10
+chi0 = 0.035
+eps_T = .25
+M0 = .90 
+lambda_p = .05
+lambda_A = .01
+
+#constants from Lima
+Mp = 2.1
+Mh = 1.1
+Mn = 1.3
+D = 1
+lambda_p = .5
+lambda_a = 0.0
+lambda_ph = .5
+lambda_pH = .3
+lambda_Hp = .2
+lambda_hn = .8
+eps_T = .4
+chi0 = .035
+delta_sigma = .01
+sigma_ph = .5
+sigma_hp = .2
+sigma_hn = .1
+Ebar = .045
+
+x = np.linspace(0,L, N)
+dx = L / N
+
+# wavenumbers 
+k = 2.0 * np.pi * np.fft.fftfreq(N, d=dx)
+k2 = k**2
+k4 = k**4
+
+rng = np.random.default_rng(300)
+
+phi_sigma = 0.04 * np.abs(rng.standard_normal(N))
+phi_T = 0.05 * np.abs(rng.standard_normal(N))
+#phi_T = (.1)*1.0/( (x - 2.0)**2 +1)
+phi_H = 0.05 * np.abs(rng.standard_normal(N))
+phi_N = 0.05 * np.abs(rng.standard_normal(N))
+phi_sigma = 1.0 - phi_T - phi_H - phi_N
+
+phi_sigma_hat = np.fft.fft(phi_sigma)
+phi_T_hat = np.fft.fft(phi_T)
+phi_H_hat = np.fft.fft(phi_H)
+phi_N_hat = np.fft.fft(phi_N)
+
+phi_sigma_data = []; phi_sigma_data.append(phi_sigma)
+phi_T_data = []; phi_T_data.append(phi_T)
+phi_H_data = []; phi_T_data.append(phi_H)
+phi_N_data = []; phi_T_data.append(phi_N)
+tdata = []; tdata.append(0.0)
+
+
+# adding noise for later
+#noise_scale = np.sqrt( 2.0 * M * sigma * dt / dx)
+
+def fft(u):
+    return np.fft.fft(u)
+
+def ifft(u_hat):
+    return np.fft.ifft(u_hat).real
+
+def derivative(u, order=1):
+    return ifft((1j * k)**order * fft(u))
+
+def laplacian(u):
+    return ifft(-k2 * fft(u))
+
+def Phi_prime(phi):
+    #return phi**3 - phi
+    return 2*phi**3 - 3*phi**2 + phi
+    #return phi*(1.0 - phi) * (1.0 - 2 * phi)
+
+def heaviside(x):
+    return np.heaviside(x, 0.0)
+
+
+def mobility(phi):
+    return M0 * np.ones_like(phi)
+
+def S_sigma(phi_sigma, phi_T, phi_H, phi_N):
+    phi_P = phi_T - phi_H - phi_N
+    return -lambda_p * phi_sigma * phi_P - lambda_ph * phi_sigma * phi_H + lambda_a * (phi_P + phi_H)
+
+def S_T(phi_sigma, phi_T, phi_H, phi_N):
+    return lambda_p * phi_sigma * (phi_T - phi_H - phi_N) - lambda_A * (phi_T - phi_N)
+
+def S_H(phi_sigma, phi_T, phi_H, phi_N):
+    phi_P = phi_T - phi_H - phi_N
+    return -lambda_A * phi_H + lambda_pH * heaviside(sigma_ph - phi_sigma) * phi_P -\
+        heaviside( phi_sigma - sigma_hp) * phi_H - lambda_hn * heaviside(sigma_hn - phi_sigma) * phi_H
+
+def S_N(phi_sigma, phi_T, phi_H, phi_N):
+    phi_P = phi_T - phi_H - phi_N
+    return lambda_hn * heaviside( sigma_hn - phi_sigma) * phi_H
+
+def S_P(phi_sigma, phi_T, phi_H, phi_N):
+    phi_P = phi_T - phi_H - phi_N
+    return -lambda_p * phi_sigma * phi_P - \
+                lambda_A * phi_P - lambda_ph * heaviside( sigma_ph - phi_sigma)*phi_sigma +\
+                lambda_Hp * heaviside(phi_sigma - sigma_hp) * phi_H
+
+def Mobility(phi_T, phi_H = 0, phi_N = 0):
+    return Mp * (phi_T - phi_H - phi_N)**2 + Mh * phi_H**2 + Mn * phi_N**2
+
+def Mobility_h(phi_H):
+    return Mh * phi_H**2
+
+def Mobility_n(phi_N):
+    return Mn * phi_N**2
+
+den_sigma = 1.0 + dt * M_sigma * delta_sigma * k2
+den_T = 1.0 + dt * M0 * eps_T**2 * k4
+den_H = 1.0 + dt * M0 * eps_T**2 * k4
+den_N = 1.0 + dt * M0 * eps_T**2 * k4
+
+for n in range(nsteps):
+
+    phi_sigma = ifft(phi_sigma_hat)
+    phi_T = ifft(phi_T_hat)
+    phi_H = ifft(phi_H_hat)
+    phi_N = ifft(phi_N_hat)
+
+    mu =  Phi_prime(phi_T) - eps_T**2 * laplacian(phi_T) - chi0 * phi_sigma
     
-    # Write dataframe to file
-    pd.DataFrame(data).to_csv(f"./output/{timestamp}/sim_{sim_num+1}/{label}.csv")
+    rhs_sigma = phi_sigma_hat + dt * M_sigma * chi0 * k2 * phi_T_hat + dt * fft(S_sigma(phi_sigma, phi_T, phi_H, phi_N))  
+    phi_sigma_hat_new = rhs_sigma / den_sigma
 
-    print(f"[Simulation {sim_num}] Saving {label}.csv complete")
+    rhs_T =  -M0 * k2 * fft(Phi_prime(phi_T)) + M0 * chi0 * k2 * phi_sigma_hat 
+    rhs_H =  -M0 * k2 * fft(Phi_prime(phi_T)) + M0 * chi0 * k2 * phi_sigma_hat 
+    rhs_N =  -M0 * k2 * fft(Phi_prime(phi_T)) + M0 * chi0 * k2 * phi_sigma_hat 
 
-def run_simulation(sim_num, timestamp):
-    # Simulation Settings
-    N = 256
-    L = 10.1
-    dt = 5.0e-5
-    T = 1.30
-    nsteps = int(T / dt)
+    d_mu = derivative(mu)
+    M_current_T = Mobility(phi_T, phi_H, phi_N)
+    variable_flux_T = (M_current_T - M0) * d_mu
+    M_current_H = Mobility_h(phi_H)
+    variable_flux_H = (M_current_H - M0) * d_mu
+    M_current_N = Mobility_n(phi_N)
+    variable_flux_N = (M_current_N - M0) * d_mu
 
-    # Constants
-    eps = .04  
-    M = .1   
-    sigma = 3.0e-5
-    M_sigma = .20
-    delta_sigma = .10
-    chi0 = 0.035
-    eps_T = .25
-    M0 = .90 
-    lambda_p = .05
-    lambda_A = .01
 
-    # Create folder for current simulation
-    folder_path = pathlib.Path(f"./output/{timestamp}/sim_{sim_num+1}")
-    folder_path.mkdir(parents=True, exist_ok=True)
+    rhs_T += fft(derivative(variable_flux_T))
+    rhs_T += fft(S_T(phi_sigma, phi_T, phi_H, phi_N))
+    rhs_H += fft(derivative(variable_flux_H))
+    rhs_H += fft(S_H(phi_sigma, phi_T, phi_H, phi_N))
+    rhs_N += fft(derivative(variable_flux_N))
+    rhs_N += fft(S_N(phi_sigma, phi_T, phi_H, phi_N))
 
-    print(f"[Simulation {sim_num+1}] Started")
 
-    Mp = np.random.choice(np.linspace(start=100, stop=300, num=N))
-    Mh = np.random.choice(np.linspace(start=10, stop=30, num=N))
-    Mn = np.random.choice(np.linspace(start=0, stop=10, num=N))
-    D = np.random.choice(np.linspace(start=0.5, stop=1.5, num=N))
-    lambda_p = np.random.choice(np.linspace(start=0, stop=1, num=N))
-    lambda_a = np.random.choice(np.linspace(start=0, stop=1, num=N))
-    lambda_ph = np.random.choice(np.linspace(start=0, stop=1, num=N))
-    lambda_pH = np.random.choice(np.linspace(start=0, stop=1, num=N))
-    lambda_Hp = np.random.choice(np.linspace(start=0, stop=1, num=N))
-    lambda_hn = np.random.choice(np.linspace(start=0, stop=1, num=N))
-    eps_T = np.random.choice(np.linspace(start=0, stop=0.01, num=N))
-    chi0 = np.random.choice(np.linspace(start=0.01, stop=0.05, num=N))
-    delta_sigma = np.random.choice(np.linspace(start=0.0001, stop=1, num=N))
-    sigma_ph = np.random.choice(np.linspace(start=0.1, stop=1, num=N))
-    sigma_hp = np.random.choice(np.linspace(start=0.1, stop=1, num=N))
-    sigma_hn = np.random.choice(np.linspace(start=0.1, stop=1, num=N))
-    Ebar = np.random.choice(np.linspace(start=0.025, stop=0.05, num=N))
 
-    parameters = {
-        "Mp": Mp,
-        "Mh": Mh,
-        "Mn": Mn,
-        "D": D,
-        "lambda_p": lambda_p,
-        "lambda_a": lambda_a,
-        "lambda_ph": lambda_ph,
-        "lambda_pH": lambda_pH,
-        "lambda_Hp": lambda_Hp,
-        "lambda_hn": lambda_hn,
-        "eps_T": eps_T,
-        "chi0": chi0,
-        "delta_sigma": delta_sigma,
-        "sigma_ph": sigma_ph,
-        "sigma_hp": sigma_hp,
-        "sigma_hn": sigma_hn,
-        "Ebar": Ebar
-    }
+    eta_T = rng.standard_normal(N)*.3
+    eta_T_hat = np.fft.fft(eta_T)
+    noise_hat_T = ( np.sqrt(2.0 * M * sigma * dt)* 1j * k * eta_T_hat / np.sqrt(dx) )*0
 
-    # Create 1-dimensional line
-    x = np.linspace(0, L, N)
-    dx = L / N
+    eta_H = rng.standard_normal(N)*.3
+    eta_H_hat = np.fft.fft(eta_H)
+    noise_hat_H = ( np.sqrt(2.0 * M * sigma * dt)* 1j * k * eta_H_hat / np.sqrt(dx) )*0
 
-    # Wave Numbers 
-    k = 2.0 * np.pi * np.fft.fftfreq(N, d=dx)
-    k2 = k**2
-    k4 = k**4
+    eta_N = rng.standard_normal(N)*.3
+    eta_N_hat = np.fft.fft(eta_N)
+    noise_hat_N = ( np.sqrt(2.0 * M * sigma * dt)* 1j * k * eta_N_hat / np.sqrt(dx) )*0
 
-    # Random Number Generator
-    rng = np.random.default_rng(300)
+    phi_T_hat_new = ( phi_T_hat + dt * rhs_T + noise_hat_T) / den_T
+    phi_H_hat_new = ( phi_H_hat + dt * rhs_H + noise_hat_H) / den_H
+    phi_N_hat_new = ( phi_N_hat + dt * rhs_N + noise_hat_N) / den_N
 
-    # Initial conditions
-    phi_T = 0.05 * np.abs(rng.standard_normal(N))
-    phi_H = 0.05 * np.abs(rng.standard_normal(N))
-    phi_N = 0.05 * np.abs(rng.standard_normal(N))
-    phi_sigma = np.ones(N) - phi_T - phi_H - phi_N
+    phi_sigma_hat = phi_sigma_hat_new
+    phi_T_hat = phi_T_hat_new
+    phi_H_hat = phi_H_hat_new
+    phi_N_hat = phi_N_hat_new
 
-    # Perform FFT on initial condition
-    phi_T_hat = np.fft.fft(phi_T)
-    phi_H_hat = np.fft.fft(phi_H)
-    phi_N_hat = np.fft.fft(phi_N)
-    phi_sigma_hat = np.fft.fft(phi_sigma)
 
-    # Initial state
-    phi_sigma_data = []
+
     phi_sigma_data.append(phi_sigma)
-
-    phi_T_data = []
     phi_T_data.append(phi_T)
-
-    phi_H_data = []
     phi_H_data.append(phi_H)
-
-    phi_N_data = []
     phi_N_data.append(phi_N)
-    
-    tdata = []
-    tdata.append(0.0)
+    tdata.append(n*dt)
 
-    # Noise addition (for later)
-    # noise_scale = np.sqrt( 2.0 * M * sigma * dt / dx)
+########################################################################
+#
+# Create movie from output
+#
+########################################################################
 
-    den_sigma = 1.0 + dt * M_sigma * delta_sigma * k2
-    den_T = 1.0 + dt * M0 * eps_T**2 * k4
-    den_H = 1.0 + dt * M0 * eps_T**2 * k4
-    den_N = 1.0 + dt * M0 * eps_T**2 * k4
+phi_sigma_data_small = phi_sigma_data[::50]
+phi_T_data_small = phi_T_data[::50]
+phi_H_data_small = phi_H_data[::50]
+phi_N_data_small = phi_N_data[::50]
+#------------------------------
+fig, ax = plt.subplots()
+line1, = ax.plot([], [], lw=2, color='blue')  # Initialize an empty line
+line2, = ax.plot([], [], lw=2, color='red')  # Initialize an empty line
+line3, = ax.plot([], [], lw=2, color='green')  # Initialize an empty line
+line4, = ax.plot([], [], lw=2, color='yellow')  # Initialize an empty line
+ax.grid(True, linestyle='--')
+ax.set_facecolor('lightgray')
+fig.set_facecolor('whitesmoke')
+ax.set_xlim(0, L)
+ax.set_ylim(-1.2, 1.2)
+ax.set_title("Tumor_CH_FULL_V1")
 
-    for n in range(nsteps):
-        phi_sigma = ifft(phi_sigma_hat)
-        phi_T = ifft(phi_T_hat)
-        phi_H = ifft(phi_H_hat)
-        phi_N = ifft(phi_N_hat)
 
-        mu =  Phi_prime(phi_T) - eps_T**2 * laplacian(phi_T, k2) - chi0 * phi_sigma
-        
-        rhs_sigma = phi_sigma_hat + dt * M_sigma * chi0 * k2 * phi_T_hat + dt * fft(S_sigma(phi_sigma, phi_T, phi_H, phi_N, lambda_p, lambda_ph, lambda_a))  
-        phi_sigma_hat_new = rhs_sigma / den_sigma
+def init():
+    line1.set_data([], [])
+    line2.set_data([], [])
+    line3.set_data([], [])
+    line4.set_data([], [])
+    return line1, line2, line3, line4
 
-        rhs_T =  -M0 * k2 * fft(Phi_prime(phi_T)) + M0 * chi0 * k2 * phi_sigma_hat 
-        rhs_H =  -M0 * k2 * fft(Phi_prime(phi_T)) + M0 * chi0 * k2 * phi_sigma_hat 
-        rhs_N =  -M0 * k2 * fft(Phi_prime(phi_T)) + M0 * chi0 * k2 * phi_sigma_hat 
+def update(frame):
+    y1 = phi_T_data_small[frame]
+    y2 = phi_H_data_small[frame]
+    y3 = phi_N_data_small[frame]
+    y4 = phi_sigma_data_small[frame]
+    line1.set_data(x, y1)
+    line2.set_data(x, y2)
+    line3.set_data(x, y3)
+    line4.set_data(x, y4)
+    return line1, line2,line3, line4
 
-        d_mu = derivative(mu, k, order=1)
-        M_current_T = Mobility(phi_T, phi_H, phi_N, Mp, Mh, Mn)
-        variable_flux_T = (M_current_T - M0) * d_mu
-        M_current_H = Mobility_h(phi_H, Mh)
-        variable_flux_H = (M_current_H - M0) * d_mu
-        M_current_N = Mobility_n(phi_N, Mn)
-        variable_flux_N = (M_current_N - M0) * d_mu
 
-        rhs_T += fft(derivative(variable_flux_T, k, order=1))
-        rhs_T += fft(S_T(phi_sigma, phi_T, phi_H, phi_N, lambda_p, lambda_A))
-        rhs_H += fft(derivative(variable_flux_H, k, order=1))
-        rhs_H += fft(S_H(phi_sigma, phi_T, phi_H, phi_N, lambda_A, lambda_pH, sigma_ph, sigma_hp, lambda_hn, sigma_hn))
-        rhs_N += fft(derivative(variable_flux_N, k, order=1))
-        rhs_N += fft(S_N(phi_sigma, phi_T, phi_H, phi_N, lambda_hn, sigma_hn))
+ani = FuncAnimation(fig, update, frames=len(phi_H_data_small), init_func=init, blit=True)
 
-        eta_T = rng.standard_normal(N)*.3
-        eta_T_hat = np.fft.fft(eta_T)
-        noise_hat_T = ( np.sqrt(2.0 * M * sigma * dt)* 1j * k * eta_T_hat / np.sqrt(dx) )*0
-
-        eta_H = rng.standard_normal(N)*.3
-        eta_H_hat = np.fft.fft(eta_H)
-        noise_hat_H = ( np.sqrt(2.0 * M * sigma * dt)* 1j * k * eta_H_hat / np.sqrt(dx) )*0
-
-        eta_N = rng.standard_normal(N)*.3
-        eta_N_hat = np.fft.fft(eta_N)
-        noise_hat_N = ( np.sqrt(2.0 * M * sigma * dt)* 1j * k * eta_N_hat / np.sqrt(dx) )*0
-
-        phi_T_hat_new = ( phi_T_hat + dt * rhs_T + noise_hat_T) / den_T
-        phi_H_hat_new = ( phi_H_hat + dt * rhs_H + noise_hat_H) / den_H
-        phi_N_hat_new = ( phi_N_hat + dt * rhs_N + noise_hat_N) / den_N
-
-        phi_sigma_hat = phi_sigma_hat_new
-        phi_T_hat = phi_T_hat_new
-        phi_H_hat = phi_H_hat_new
-        phi_N_hat = phi_N_hat_new
-
-        phi_sigma_data.append(phi_sigma)
-        phi_T_data.append(phi_T)
-        phi_H_data.append(phi_H)
-        phi_N_data.append(phi_N)
-        tdata.append(n*dt)
-
-    # Save parameters for current simulation to file
-    with open(f"./output/{timestamp}/sim_{sim_num+1}/params.json", "w", encoding="utf-8") as f:
-        json.dump(parameters, f, indent=4)
-
-    # Save results to corresponding simulation folder
-    print(f"[Simulation {sim_num+1}] Saving")
-    pd.DataFrame(phi_sigma_data).to_csv(f"./output/{timestamp}/sim_{sim_num+1}/phi_sigma_data.csv")
-    pd.DataFrame(phi_T_data).to_csv(f"./output/{timestamp}/sim_{sim_num+1}/phi_T_data.csv")
-    pd.DataFrame(phi_H_data).to_csv(f"./output/{timestamp}/sim_{sim_num+1}/phi_H_data.csv")
-    pd.DataFrame(phi_N_data).to_csv(f"./output/{timestamp}/sim_{sim_num+1}/phi_N_data.csv")
-    pd.DataFrame(tdata).to_csv(f"./output/{timestamp}/sim_{sim_num+1}/tdata.csv")
-    print(f"[Simulation {sim_num+1}] Complete")
-
-    # with ThreadPoolExecutor(max_workers=5) as thread_executor:
-    #     thread_executor.submit(
-    #         save_results,
-    #         data=phi_sigma_data,
-    #         label="phi_sigma_data",
-    #         timestamp=timestamp,
-    #         sim_num=sim_num 
-    #     )
-
-    #     thread_executor.submit(
-    #         save_results,
-    #         data=phi_T_data,
-    #         label="phi_T_data",
-    #         timestamp=timestamp,
-    #         sim_num=sim_num 
-    #     )
-
-    #     thread_executor.submit(
-    #         save_results,
-    #         data=phi_H_data,
-    #         label="phi_H_data",
-    #         timestamp=timestamp,
-    #         sim_num=sim_num 
-    #     )
-
-    #     thread_executor.submit(
-    #         save_results,
-    #         data=phi_N_data,
-    #         label="phi_N_data",
-    #         timestamp=timestamp,
-    #         sim_num=sim_num 
-    #     )
-
-    #     thread_executor.submit(
-    #         save_results,
-    #         data=tdata,
-    #         label="tdata",
-    #         timestamp=timestamp,
-    #         sim_num=sim_num 
-    #     )
-
-def main():
-    NUM_SIMULATIONS = 10
-    MAX_WORKERS = 10
-    TIMESTAMP = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-
-    # Create output folder for the run
-    folder_path = pathlib.Path(f"./output/{TIMESTAMP}")
-    folder_path.mkdir(parents=True, exist_ok=True)
-
-    with ProcessPoolExecutor(max_workers=MAX_WORKERS) as process_executor:
-        for sim_num in range(NUM_SIMULATIONS):
-            process_executor.submit(
-                run_simulation, 
-                sim_num=sim_num, 
-                timestamp=TIMESTAMP
-            )
-
-if __name__ == "__main__":
-    try:
-        main()
-    except Exception as e:
-        print(e)
-
+writer = FFMpegWriter(fps=40, bitrate=1800)
+ani.save("tumor_full_v1.mp4", writer=writer)

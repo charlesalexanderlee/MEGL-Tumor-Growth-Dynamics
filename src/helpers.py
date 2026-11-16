@@ -18,10 +18,6 @@ def Phi_prime(phi):
 def heaviside(x):
     return np.heaviside(x, 0.0)
 
-def S_sigma(phi_sigma, phi_T, phi_H, phi_N, lambda_p, lambda_ph, lambda_a):
-    phi_P = phi_T - phi_H - phi_N
-    return -lambda_p * phi_sigma * phi_P - lambda_ph * phi_sigma * phi_H + lambda_a * (phi_P + phi_H)
-
 def S_T(phi_sigma, phi_T, phi_H, phi_N, lambda_p, lambda_A):
     return lambda_p * phi_sigma * (phi_T - phi_H - phi_N) - lambda_A * (phi_T - phi_N)
 
@@ -30,9 +26,12 @@ def S_H(phi_sigma, phi_T, phi_H, phi_N, lambda_A, lambda_pH, sigma_ph, sigma_hp,
     return -lambda_A * phi_H + lambda_pH * heaviside(sigma_ph - phi_sigma) * phi_P -\
         heaviside( phi_sigma - sigma_hp) * phi_H - lambda_hn * heaviside(sigma_hn - phi_sigma) * phi_H
 
-def S_N(phi_sigma, phi_T, phi_H, phi_N, lambda_hn, sigma_hn):
-    phi_P = phi_T - phi_H - phi_N
+def S_N(phi_sigma, phi_H, lambda_hn, sigma_hn):
     return lambda_hn * heaviside( sigma_hn - phi_sigma) * phi_H
+
+def S_sigma(phi_sigma, phi_T, phi_H, phi_N, lambda_p, lambda_ph, lambda_a):
+    phi_P = phi_T - phi_H - phi_N
+    return -lambda_p * phi_sigma * phi_P - lambda_ph * phi_sigma * phi_H + lambda_a * (phi_P + phi_H)
 
 def Mobility(phi_T, phi_H, phi_N, Mp, Mh, Mn):
     return Mp * (phi_T - phi_H - phi_N)**2 + Mh * phi_H**2 + Mn * phi_N**2
